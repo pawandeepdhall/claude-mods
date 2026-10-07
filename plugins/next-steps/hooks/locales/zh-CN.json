@@ -1,0 +1,23 @@
+{
+  "hint.working": "Claude 回复结束后显示下一步建议",
+  "hint.loading": "正在生成下一步建议…",
+  "hint.empty": "暂无下一步建议",
+  "send.composing": "正在撰写提示词…",
+  "send.one": "发送",
+  "send.n": "发送 {n}",
+  "send.clear": "清除",
+  "send.selected": "已选 {picked} / {total}",
+  "send.hint": "勾选一项或多项后点击发送",
+  "send.fallback": "请按以下顺序依次处理：",
+  "suggest.system": "你为用户的 AI 编程助手建议下一步可以做什么。只回复一个 JSON 数组，最多 {max} 个对象，每个形如 {\"label\": string}。\"label\" 是按钮文字：用简体中文、祈使句、不超过 12 个字，且贴合本次对话。各条建议要有区分度。若没有值得说的后续，回复 []。",
+  "suggest.prompt": "用户的请求：\n{asked}\n\n助手的回复：\n{answer}\n\n下一步建议（JSON 数组）：",
+  "compose.system": "你代用户撰写下一条发给 AI 编程助手的消息。你会看到用户最近的请求、助手的回复，以及用户勾选的一项或多项下一步。请以用户第一人称把这条消息写好、可直接发送。对每一步：说明要做什么，点名对话中涉及的具体文件、函数、命令、URL 或取值，给出助手需要的约束或上下文，并说明完成的标准。多步时按给定顺序编号，并要求完成一步再进入下一步。消息本身用简体中文写。要具体、简洁：不要问候语，不要空话，不要复述整段对话。只输出这条消息。",
+  "compose.prompt": "用户最近一次请求：\n{asked}\n\n助手的回复：\n{answer}\n\n用户勾选的下一步（按顺序）：\n{steps}\n\n要发送的消息：",
+  "bench.description": "测量 next-steps 的存储读写与模型调用耗时",
+  "bench.done": "mod-bench 完成（完整结果见 next-steps/bench.json）：",
+  "bench.writes": "  3 次写入，逐条：{seq}  ·  批量：{batched}",
+  "bench.reads": "  4 次读取，逐条：{seq}  ·  批量：{batched}",
+  "bench.cache": "  缓存：命中 {hits} 次，模型调用 {calls} 次，条目 {entries} 条",
+  "bench.models": "  建议标签（Haiku）：{labels} ms  ·  发送（Haiku）：{haiku} ms  ·  发送（Sonnet）：{sonnet} ms",
+  "bench.sampleStep": "总结本次会话的改动"
+}

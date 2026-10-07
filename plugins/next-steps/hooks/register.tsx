@@ -15,30 +15,112 @@ const lastAnswer = atom({ plugin: 'next-steps', key: 'lastAnswer' } as const, ''
 // True while Send is writing the prompt.
 const composing = atom({ plugin: 'next-steps', key: 'composing' } as const, false)
 
-// Writes the message Send submits: a real, specific request built from the ticked
-// steps and the conversation, not a one-line restatement of the label.
-const COMPOSE_SYSTEM =
-  "You write the next message a user sends to an AI coding assistant. You are given the user's " +
-  "last request, the assistant's last answer, and one or more next steps the user picked. Write " +
-  'that message as the user, in the first person, ready to send. For each step: say exactly what to ' +
-  'do, name the specific files, functions, commands, URLs or values from the conversation it ' +
-  'involves, give any constraints or context the assistant needs, and say what done looks like. ' +
-  'With several steps, number them in the order given and say to finish each before the next. ' +
-  'Be concrete and concise: no greetings, no filler, no restating the whole conversation. Output ' +
-  'only the message.'
+// ---------- locale ----------
+
+type Dict = Record<string, string>
+
+// Every string the mod shows or writes into a prompt: the built-in English, overridden key
+// by key by locales/<lang>.json beside this module. A tag is tried whole, then its first
+// subtag ('zh-CN' then 'zh'); {name} placeholders are filled by the t() the hooks get.
+const EN: Dict = {
+  'hint.working': 'Next steps appear when Claude finishes',
+  'hint.loading': 'Finding next steps…',
+  'hint.empty': 'No next steps yet',
+  'send.composing': 'Writing prompt…',
+  'send.one': 'Send',
+  'send.n': 'Send {n}',
+  'send.clear': 'Clear',
+  'send.selected': '{picked} of {total} selected',
+  'send.hint': 'Tick one or more, then Send',
+  'send.fallback': 'Please do the following, in this order:',
+  'suggest.system':
+    'You suggest what a user might ask a coding assistant to do next. Reply with only a JSON ' +
+    'array of up to {max} objects, each {"label": string}. "label" is the button text: imperative, ' +
+    'at most 5 words and under 30 characters, specific to this conversation. Make the suggestions ' +
+    'distinct from each other. If nothing useful follows, reply [].',
+  'suggest.prompt': 'User asked:\n{asked}\n\nAssistant replied:\n{answer}\n\nNext steps (JSON array):',
+  'compose.system':
+    "You write the next message a user sends to an AI coding assistant. You are given the user's " +
+    "last request, the assistant's last answer, and one or more next steps the user picked. Write " +
+    'that message as the user, in the first person, ready to send. For each step: say exactly what ' +
+    'to do, name the specific files, functions, commands, URLs or values from the conversation it ' +
+    'involves, give any constraints or context the assistant needs, and say what done looks like. ' +
+    'With several steps, number them in the order given and say to finish each before the next. ' +
+    'Be concrete and concise: no greetings, no filler, no restating the whole conversation. ' +
+    'Output only the message.',
+  'compose.prompt':
+    "User's last request:\n{asked}\n\nAssistant's last answer:\n{answer}\n\n" +
+    'Next steps the user picked, in order:\n{steps}\n\nThe message:',
+  'bench.description': 'Time next-steps storage and model calls',
+  'bench.done': 'mod-bench done (full results in next-steps/bench.json):',
+  'bench.writes': '  3 writes, one at a time: {seq}  ·  batched: {batched}',
+  'bench.reads': '  4 reads, one at a time: {seq}  ·  batched: {batched}',
+  'bench.cache': '  cache: {hits} hits, {calls} model calls, {entries} entries',
+  'bench.models': '  Haiku labels: {labels} ms  ·  Send with Haiku: {haiku} ms  ·  Send with Sonnet: {sonnet} ms',
+  'bench.sampleStep': 'Summarize what changed in this session',
+}
+
+// The language to fall back to when the environment names none this mod has a file for.
+const DEFAULT_LANG = 'zh-CN'
+
+let localeOnce: Promise<Dict> | undefined
+
+type T = (key: string, vars?: Record<string, string | number>) => string
+
+// The locale of this session, resolved once and kept: env picks the language, its file
+// overrides English, and a language with no file (or a broken one) simply stays English.
+async function locale($: EngineInterface): Promise<T> {
+  localeOnce ??= load($)
+  const dict = await localeOnce
+  return (key, vars) => format(dict[key] ?? key, vars)
+}
+
+const format = (s: string, vars?: Record<string, string | number>): string =>
+  vars ? s.replace(/\{(\w+)\}/g, (m, k) => String(vars[k] ?? m)) : s
+
+// 'zh_CN.UTF-8' -> 'zh-CN', the spelling of a file's name.
+const tag = (s: string) => s.split(/[.@]/)[0].replace(/_/g, '-')
+
+// The languages to try, most specific first. An explicit NEXT_STEPS_LANG decides on its
+// own; LANG and LC_ALL are guesses that fall through to DEFAULT_LANG when no file matches.
+async function languages($: EngineInterface): Promise<string[]> {
+  const explicit = tag((await $.env.get('NEXT_STEPS_LANG')) ?? '')
+  if (explicit) return [explicit]
+  const guessed = [await $.env.get('LC_ALL'), await $.env.get('LANG')]
+  return [...guessed.map(s => tag(s ?? '')), tag(DEFAULT_LANG)].filter(Boolean)
+}
+
+async function load($: EngineInterface): Promise<Dict> {
+  let langs: string[]
+  try {
+    langs = await languages($)
+  } catch {
+    return EN // no environment to ask
+  }
+  for (const lang of langs) {
+    for (const name of new Set([lang, lang.split('-')[0]])) {
+      const dict = await readDict($, name)
+      if (dict) return dict
+    }
+  }
+  return EN
+}
+
+async function readDict($: EngineInterface, name: string): Promise<Dict | undefined> {
+  if (!name) return undefined
+  try {
+    const text = await $.fs.read(`${$.plugin.root}/hooks/locales/${name}.json`)
+    return { ...EN, ...JSON.parse(text) }
+  } catch {
+    return undefined // no file for this language, or not JSON: English stands
+  }
+}
 
 const MAX = 6
 
 // The model that writes the message Send submits. 'haiku' is near-instant; 'sonnet' is
 // slower but more specific. Change this one line to switch.
 const SEND_MODEL = 'haiku'
-
-const SYSTEM =
-  'You suggest what a user might ask a coding assistant to do next. Reply with only a JSON array ' +
-  `of up to ${MAX} objects, each {"label": string}. ` +
-  '"label" is the button text: imperative, at most 5 words and under 30 characters, specific to this conversation. ' +
-  'Make the suggestions distinct from each other. ' +
-  'If nothing useful follows, reply [].'
 
 const clip = (s: string, max: number) => (s.length > max ? s.slice(0, max) + '…' : s)
 const words = (s: string, max: number) => s.split(/\s+/).slice(0, max).join(' ')
@@ -144,10 +226,11 @@ async function suggest($: EngineInterface, answer: string) {
     update($, loading, () => true),
   ])
   // Labels only (the full prompt is written at Send), at low effort: a short, fast reply.
+  const t = await locale($)
   const reply = await completeCached($, {
     model: 'haiku',
-    system: SYSTEM,
-    prompt: `User asked:\n${clip(asked, 3000)}\n\nAssistant replied:\n${clip(answer, 6000)}\n\nNext steps (JSON array):`,
+    system: t('suggest.system', { max: MAX }),
+    prompt: t('suggest.prompt', { asked: clip(asked, 3000), answer: clip(answer, 6000) }),
     maxTokens: 350,
     effort: 'low',
     timeoutMs: 15000,
@@ -175,21 +258,19 @@ async function sendSelected($: EngineInterface) {
   ])
   const picked = ticked.map(i => list[i]).filter(Boolean)
   if (picked.length === 0 || busy) return
+  const t = await locale($)
   // Fallback if the writer fails: the labels as a plain list.
   let text =
     picked.length === 1
       ? picked[0].label
-      : 'Please do the following, in this order:\n' + picked.map((s, i) => `${i + 1}. ${s.label}`).join('\n')
+      : t('send.fallback') + '\n' + picked.map((s, i) => `${i + 1}. ${s.label}`).join('\n')
   await update($, composing, () => true)
   try {
     const steps = picked.map((s, i) => `${i + 1}. ${s.label}`).join('\n')
     const reply = await completeCached($, {
       model: SEND_MODEL,
-      system: COMPOSE_SYSTEM,
-      prompt:
-        `User's last request:\n${clip(asked, 4000)}\n\n` +
-        `Assistant's last answer:\n${clip(answer, 10000)}\n\n` +
-        `Next steps the user picked, in order:\n${steps}\n\nThe message:`,
+      system: t('compose.system'),
+      prompt: t('compose.prompt', { asked: clip(asked, 4000), answer: clip(answer, 10000), steps }),
       maxTokens: 900,
       effort: 'low',
       timeoutMs: 25000,
@@ -244,6 +325,7 @@ async function timeIt(n: number, fn: () => Promise<unknown>): Promise<Stat> {
 }
 
 async function runBench($: EngineInterface): Promise<string> {
+  const t = await locale($)
   const N = 20
   const bump = (n: number) => n + 1
   const writesSequential = await timeIt(N, async () => {
@@ -267,13 +349,10 @@ async function runBench($: EngineInterface): Promise<string> {
   // Model calls on the current conversation: labels, then Send written by each model.
   const [asked, answer, list] = await Promise.all([read($, lastPrompt), read($, lastAnswer), read($, suggestions)])
   const labels = list.filter(x => x && typeof x === 'object' && x.label).slice(0, 2).map(x => x.label)
-  const steps = (labels.length ? labels : ['Summarize what changed in this session'])
+  const steps = (labels.length ? labels : [t('bench.sampleStep')])
     .map((l, i) => `${i + 1}. ${l}`)
     .join('\n')
-  const composeInput =
-    `User's last request:\n${clip(asked, 4000)}\n\n` +
-    `Assistant's last answer:\n${clip(answer, 10000)}\n\n` +
-    `Next steps the user picked, in order:\n${steps}\n\nThe message:`
+  const composeInput = t('compose.prompt', { asked: clip(asked, 4000), answer: clip(answer, 10000), steps })
   const timed = async (model: string, system: string, prompt: string, maxTokens: number) => {
     const t0 = tick()
     const r = await $.model.complete({ model, system, prompt, maxTokens, effort: 'low', timeoutMs: 60000 })
@@ -286,12 +365,12 @@ async function runBench($: EngineInterface): Promise<string> {
   }
   const labelsCall = await timed(
     'haiku',
-    SYSTEM,
-    `User asked:\n${clip(asked, 3000)}\n\nAssistant replied:\n${clip(answer, 6000)}\n\nNext steps (JSON array):`,
+    t('suggest.system', { max: MAX }),
+    t('suggest.prompt', { asked: clip(asked, 3000), answer: clip(answer, 6000) }),
     350,
   )
-  const sendHaiku = await timed('haiku', COMPOSE_SYSTEM, composeInput, 900)
-  const sendSonnet = await timed('sonnet', COMPOSE_SYSTEM, composeInput, 900)
+  const sendHaiku = await timed('haiku', t('compose.system'), composeInput, 900)
+  const sendSonnet = await timed('sonnet', t('compose.system'), composeInput, 900)
 
   const result = {
     measuredAt: new Date().toISOString(),
@@ -304,18 +383,18 @@ async function runBench($: EngineInterface): Promise<string> {
   await $.fs.write(`${$.plugin.root}/bench.json`, JSON.stringify(result, null, 2))
   const ms = (x: Stat) => `${x.median} ms median`
   return [
-    'mod-bench done (full results in next-steps/bench.json):',
-    `  3 writes, one at a time: ${ms(writesSequential)}  ·  batched: ${ms(writesBatched)}`,
-    `  4 reads, one at a time: ${ms(readsSequential)}  ·  batched: ${ms(readsBatched)}`,
-    `  cache: ${cacheStats.hits} hits, ${cacheStats.modelCalls} model calls, ${replyCache.size} entries`,
-    `  Haiku labels: ${labelsCall.ms} ms  ·  Send with Haiku: ${sendHaiku.ms} ms  ·  Send with Sonnet: ${sendSonnet.ms} ms`,
+    t('bench.done'),
+    t('bench.writes', { seq: ms(writesSequential), batched: ms(writesBatched) }),
+    t('bench.reads', { seq: ms(readsSequential), batched: ms(readsBatched) }),
+    t('bench.cache', { hits: cacheStats.hits, calls: cacheStats.modelCalls, entries: replyCache.size }),
+    t('bench.models', { labels: labelsCall.ms, haiku: sendHaiku.ms, sonnet: sendSonnet.ms }),
   ].join('\n')
 }
 
 export const register: Register = on => {
   on('session.start', async ($, e, next) => {
     const result = await next(e)
-    await $.command.register({ name: 'mod-bench', description: 'Time next-steps storage and model calls' })
+    await $.command.register({ name: 'mod-bench', description: (await locale($))('bench.description') })
     return result
   })
 
@@ -357,14 +436,15 @@ export const register: Register = on => {
     ])
     const list = saved.filter(x => x && typeof x === 'object' && x.label)
     const { Box, Text, Button } = $.ui.resolve(e)
+    const t = await locale($)
 
     if (e.props.isWorking || list.length === 0) {
       // Placeholder, so the spot never looks broken or empty.
       const hint = e.props.isWorking
-        ? 'Next steps appear when Claude finishes'
+        ? t('hint.working')
         : isLoading
-          ? 'Finding next steps…'
-          : 'No next steps yet'
+          ? t('hint.loading')
+          : t('hint.empty')
       return (
         <Box flexDirection="row" alignItems="center" gap={1}>
           <Text dimColor>{hint}</Text>
@@ -398,22 +478,20 @@ export const register: Register = on => {
           {/* Footer: what is ticked, a way to undo it, and the action, side by side. */}
           <Box flexDirection="row" alignItems="center" gap={1}>
             {isComposing ? (
-              <Text dimColor>Writing prompt…</Text>
+              <Text dimColor>{t('send.composing')}</Text>
             ) : picked.length > 0 ? (
               <Box flexDirection="row" alignItems="center" gap={1}>
                 <Button
                   key="send"
-                  label={picked.length === 1 ? 'Send' : `Send ${picked.length}`}
+                  label={picked.length === 1 ? t('send.one') : t('send.n', { n: picked.length })}
                   variant="primary"
                   onPress={() => sendSelected($)}
                 />
-                <Button key="clear" label="Clear" dimColor onPress={() => update($, selected, () => [])} />
-                <Text dimColor>
-                  {picked.length} of {list.length} selected
-                </Text>
+                <Button key="clear" label={t('send.clear')} dimColor onPress={() => update($, selected, () => [])} />
+                <Text dimColor>{t('send.selected', { picked: picked.length, total: list.length })}</Text>
               </Box>
             ) : (
-              <Text dimColor>Tick one or more, then Send</Text>
+              <Text dimColor>{t('send.hint')}</Text>
             )}
           </Box>
         </Box>

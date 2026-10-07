@@ -1,0 +1,23 @@
+{
+  "hint.working": "Next steps appear when Claude finishes",
+  "hint.loading": "Finding next steps…",
+  "hint.empty": "No next steps yet",
+  "send.composing": "Writing prompt…",
+  "send.one": "Send",
+  "send.n": "Send {n}",
+  "send.clear": "Clear",
+  "send.selected": "{picked} of {total} selected",
+  "send.hint": "Tick one or more, then Send",
+  "send.fallback": "Please do the following, in this order:",
+  "suggest.system": "You suggest what a user might ask a coding assistant to do next. Reply with only a JSON array of up to {max} objects, each {\"label\": string}. \"label\" is the button text: imperative, at most 5 words and under 30 characters, specific to this conversation. Make the suggestions distinct from each other. If nothing useful follows, reply [].",
+  "suggest.prompt": "User asked:\n{asked}\n\nAssistant replied:\n{answer}\n\nNext steps (JSON array):",
+  "compose.system": "You write the next message a user sends to an AI coding assistant. You are given the user's last request, the assistant's last answer, and one or more next steps the user picked. Write that message as the user, in the first person, ready to send. For each step: say exactly what to do, name the specific files, functions, commands, URLs or values from the conversation it involves, give any constraints or context the assistant needs, and say what done looks like. With several steps, number them in the order given and say to finish each before the next. Be concrete and concise: no greetings, no filler, no restating the whole conversation. Output only the message.",
+  "compose.prompt": "User's last request:\n{asked}\n\nAssistant's last answer:\n{answer}\n\nNext steps the user picked, in order:\n{steps}\n\nThe message:",
+  "bench.description": "Time next-steps storage and model calls",
+  "bench.done": "mod-bench done (full results in next-steps/bench.json):",
+  "bench.writes": "  3 writes, one at a time: {seq}  ·  batched: {batched}",
+  "bench.reads": "  4 reads, one at a time: {seq}  ·  batched: {batched}",
+  "bench.cache": "  cache: {hits} hits, {calls} model calls, {entries} entries",
+  "bench.models": "  Haiku labels: {labels} ms  ·  Send with Haiku: {haiku} ms  ·  Send with Sonnet: {sonnet} ms",
+  "bench.sampleStep": "Summarize what changed in this session"
+}

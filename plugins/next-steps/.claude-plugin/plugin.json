@@ -1,7 +1,7 @@
 {
   "name": "next-steps",
   "displayName": "Next Steps",
-  "version": "1.3.1",
+  "version": "1.4.0",
   "description": "After each Claude Code reply, suggests up to 3 next steps as one-click buttons above the prompt. A Claude Code mod.",
   "author": {
     "name": "Pawandeep"
